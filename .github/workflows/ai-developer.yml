@@ -1,4 +1,3 @@
-name: AI Agent Developer
 on:
   issues:
     types: [opened]
@@ -8,8 +7,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - setup-python: 3.11
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - run: pip install google-genai
+
       - name: Executar Agente
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
