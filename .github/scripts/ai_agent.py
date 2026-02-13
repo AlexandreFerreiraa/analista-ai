@@ -54,7 +54,7 @@ def main():
     content = response.text
     if "--- START_FILE:" in content:
         for part in content.split("--- START_FILE: ")[1:]:
-            header, rest = part.split(" ---")
+            header, rest = part.split(" ---",1)
             path = header.strip()
             code = rest.split("--- END_FILE ---")[0].strip()
             os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
