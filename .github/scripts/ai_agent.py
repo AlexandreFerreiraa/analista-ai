@@ -48,7 +48,7 @@ def main():
     # Lógica simples para extrair e sobrescrever os arquivos
     content = response.text
     for part in content.split("--- START_FILE: ")[1:]:
-        header, rest = part.split(" ---")
+        header, rest = part.split(" ---",1)
         path = header.strip()
         code = rest.split("--- END_FILE ---")[0].strip()
         
@@ -59,3 +59,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
