@@ -1,3 +1,4 @@
+name: AI Agent Developer
 on:
   issues:
     types: [opened]
@@ -5,18 +6,29 @@ on:
 jobs:
   coding:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Dá permissão para a IA escrever no seu código
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-
+          
       - run: pip install google-genai
-
+      
       - name: Executar Agente
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python .github/scripts/ai_agent.py
+
+      - name: Salvar Alterações
+        run: |
+          git config --global user.name "GitHub Action AI"
+          git config --global user.email "ai-agent@github.com"
+          git add .
+          git commit -m "🤖 IA: Atualizando lógica conforme Issue #${{ github.event.issue.number }}"
+          git push
