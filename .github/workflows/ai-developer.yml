@@ -1,0 +1,18 @@
+name: AI Agent Developer
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  coding:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - setup-python: 3.11
+      - run: pip install google-genai
+      - name: Executar Agente
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python .github/scripts/ai_agent.py

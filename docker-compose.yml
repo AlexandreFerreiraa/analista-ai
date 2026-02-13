@@ -1,0 +1,30 @@
+services:
+  # Seu Backend (API)
+  api:
+    image: python:3.11-slim
+    container_name: analista_backend
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    command: >
+      sh -c "pip install --no-cache-dir -r requirements.txt && 
+             uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+
+  # Seu Novo Frontend (Interface)
+  frontend:
+    image: python:3.11-slim
+    container_name: analista_interface
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
+    command: >
+      sh -c "pip install --no-cache-dir -r requirements.txt && 
+             streamlit run app.py --server.address 0.0.0.0"
