@@ -2,6 +2,10 @@ name: AI Agent Developer
 on:
   issues:
     types: [opened]
+    
+permissions:
+  contents: write
+  issues: write
 
 jobs:
   coding:
