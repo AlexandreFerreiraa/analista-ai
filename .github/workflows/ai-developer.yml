@@ -2,16 +2,13 @@ name: AI Agent Developer
 on:
   issues:
     types: [opened]
-    
-permissions:
-  contents: write
-  issues: write
 
 jobs:
   coding:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # Dá permissão para a IA escrever no seu código
+      contents: write
+      issues: write    # ADICIONE ESTA LINHA: Permite fechar a issue
     steps:
       - uses: actions/checkout@v4
       
@@ -20,19 +17,22 @@ jobs:
         with:
           python-version: '3.11'
           
-      - run: pip install google-genai
+      - run: pip install google-genai requests # Adicionamos 'requests' para a API do GitHub
       
       - name: Executar Agente
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # GARANTA QUE ESTA LINHA ESTEJA AQUI
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }} # Passamos o número da issue
+          REPO_NAME: ${{ github.repository }}            # Passamos o nome do repositório
         run: python .github/scripts/ai_agent.py
 
-      - name: Salvar Alterações
+      - name: Salvar Alterações no Código
         run: |
           git config --global user.name "GitHub Action AI"
           git config --global user.email "ai-agent@github.com"
           git add .
-          git commit -m "🤖 IA: Atualizando lógica conforme Issue #${{ github.event.issue.number }}"
+          git commit -m "🤖 IA: Atualizando lógica conforme Issue #${{ github.event.issue.number }}" || echo "Sem mudanças para comitar"
           git push
