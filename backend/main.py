@@ -1,5 +1,5 @@
 import os
-import json # Já está no topo do arquivo.
+import json
 
 from google import genai
 from fastapi import FastAPI
@@ -30,6 +30,19 @@ generation_config = {
 
 
 # --- DEFINIÇÃO DOS PAPÉIS (ROLES) ---
+
+# 1. Função auxiliar para limpar JSON
+def limpar_json(texto: str) -> str:
+    """
+    Remove marcações de markdown como ```json e ``` se estiverem presentes na resposta da IA.
+    """
+    # Remove ```json do início
+    if texto.strip().startswith("```json"):
+        texto = texto.strip()[len("```json"):].strip()
+    # Remove ``` do final
+    if texto.strip().endswith("```"):
+        texto = texto.strip()[:-len("```")].strip()
+    return texto
 
 def agente_pesquisador(query: str) -> list[dict]:
     """
@@ -142,7 +155,7 @@ def agente_analista(dados: list[dict]):
     ```
     """
     
-    # 1. Adicionar um bloco `try...except` robusto na função `agente_analista`.
+    # 2. Envolver todo o processo em um bloco try...except
     try:
         # Gera o conteúdo usando o modelo Gemini com as configurações definidas.
         # Usando client.models.generate_content diretamente conforme o novo padrão.
@@ -153,13 +166,16 @@ def agente_analista(dados: list[dict]):
             # safety_settings são omitidas para usar as configurações padrão do Gemini.
         )
         
-        response_text = response.text # Obtém a string JSON diretamente da resposta
+        raw_response_text = response.text # Obtém a string JSON diretamente da resposta
         
-        # 4. Adicione um `print(f"DEBUG: Resposta da IA: {response.text}")`.
-        print(f"DEBUG: Resposta da IA: {response.text}")
+        # 4. Adicione um `print(f"DEBUG IA: {response.text}")`.
+        print(f"DEBUG IA: {raw_response_text}")
+        
+        # 1. Limpar marcações de markdown antes de tentar parsear
+        cleaned_response_text = limpar_json(raw_response_text)
         
         # Converte a string JSON para um dicionário Python
-        analise_data = json.loads(response_text)
+        analise_data = json.loads(cleaned_response_text)
         
         # Validação básica da estrutura da resposta da IA
         if not isinstance(analise_data, dict) or \
@@ -180,7 +196,8 @@ def agente_analista(dados: list[dict]):
            len(analise_data["sugestao_visual"]["valores"]) < 3 or \
            len(analise_data["sugestao_visual"]["labels"]) != len(analise_data["sugestao_visual"]["valores"]):
             print(f"Aviso: IA retornou {len(analise_data['sugestao_visual']['labels'])} pontos para visualização. Esperado no mínimo 3. Usando fallback padrão para garantir a exibição.")
-            # 2. Se o Gemini falhar ou retornar um JSON inválido, a função deve retornar um dicionário padrão com um aviso de erro.
+            # Se a validação interna do Gemini falhar, retorna um dicionário padrão.
+            # O insight pode ser mantido se for útil, mas a visualização é padronizada.
             return {
                 "insight": analise_data.get('insight', 'Análise limitada. Dados insuficientes para um gráfico significativo.'),
                 "sugestao_visual": {
@@ -194,22 +211,22 @@ def agente_analista(dados: list[dict]):
 
     except genai.types.BlockedPromptException as e:
         print(f"Erro no agente analista: Prompt bloqueado pela segurança do Gemini. Detalhes: {e}")
-        # 2. Se o Gemini falhar ou retornar um JSON inválido, a função deve retornar um dicionário padrão com um aviso de erro.
+        # 3. Retorne um dicionário padrão em caso de erro
         return {
-            "insight": "A análise foi bloqueada devido a preocupações de segurança com o prompt ou conteúdo. Por favor, reformule sua pergunta.",
+            "insight": f"Erro técnico ao processar dados: Prompt bloqueado pela segurança do Gemini. Detalhes: {str(e)}",
             "sugestao_visual": {
-                "labels": ["Segurança Bloqueada"],
+                "labels": ["Erro"],
                 "valores": [0],
                 "tipo": "bar"
             }
         }
     except json.JSONDecodeError as e:
-        print(f"Erro no agente analista: Falha ao decodificar JSON da resposta da IA. Detalhes: {e}. Resposta bruta da IA: '{response_text[:500]}...'")
-        # 2. Se o Gemini falhar ou retornar um JSON inválido, a função deve retornar um dicionário padrão com um aviso de erro.
+        print(f"Erro no agente analista: Falha ao decodificar JSON da resposta da IA. Detalhes: {e}. Resposta bruta da IA: '{raw_response_text[:500]}...'")
+        # 3. Retorne um dicionário padrão em caso de erro
         return {
-            "insight": f"Erro de formato JSON na resposta da IA: A IA não retornou um JSON válido. Por favor, tente novamente.",
+            "insight": f"Erro técnico ao processar dados: Falha ao decodificar JSON da resposta da IA. Detalhes: {str(e)}. Resposta bruta: '{raw_response_text[:100]}...'",
             "sugestao_visual": {
-                "labels": ["Erro JSON"],
+                "labels": ["Erro"],
                 "valores": [0],
                 "tipo": "bar"
             }
@@ -218,11 +235,11 @@ def agente_analista(dados: list[dict]):
         # Este bloco captura erros gerais, incluindo problemas com a API Key do Gemini
         # ou indisponibilidade do serviço.
         print(f"Erro inesperado no agente analista: {e}")
-        # 2. Se o Gemini falhar ou retornar um JSON inválido, a função deve retornar um dicionário padrão com um aviso de erro.
+        # 3. Retorne um dicionário padrão em caso de erro
         return {
-            "insight": f"Erro interno ao gerar análise: {e}. Por favor, verifique sua API Key e conexão e tente novamente.",
+            "insight": f"Erro técnico ao processar dados: {str(e)}. Por favor, verifique sua API Key e conexão e tente novamente.",
             "sugestao_visual": {
-                "labels": ["Erro Inesperado"],
+                "labels": ["Erro"],
                 "valores": [0],
                 "tipo": "bar"
             }
@@ -235,8 +252,11 @@ def agente_auditor(resposta: dict, fontes: list[str]):
     """
     # Verifica se a resposta contém um insight e se há fontes para validação.
     # Esta é uma auditoria superficial. Em um cenário real, um LLM faria uma validação cruzada mais profunda.
-    if not resposta.get('insight') or "erro" in resposta.get('insight', '').lower() or "bloqueada" in resposta.get('insight', '').lower():
-        print("DEBUG: Auditoria falhou: Insight vazio ou contém mensagem de erro.")
+    # A auditoria deve ser capaz de lidar com os insights de erro do agente_analista
+    insight_text = resposta.get('insight', '').lower()
+    if not insight_text or "erro técnico" in insight_text or "bloqueada" in insight_text or \
+       "dados vazios" in insight_text or "sem conteúdo" in insight_text:
+        print(f"DEBUG: Auditoria falhou: Insight vazio ou contém mensagem de erro/problema: '{insight_text}'")
         return False
     if not fontes:
         print("DEBUG: Auditoria falhou: Nenhuma fonte encontrada para validação.")
@@ -254,7 +274,12 @@ async def pipeline_analise(pergunta: str):
     
     if not bruto_resultados:
         print(f"DEBUG: Pipeline de análise: Agente Pesquisador não encontrou resultados para a pergunta: '{pergunta}'")
-        return {"error": "Nenhum resultado encontrado pelo agente pesquisador para a sua pergunta. Tente refinar a busca.", "fontes": []}
+        # 5. Lidar com o retorno de erro de forma elegante
+        return {
+            "insight": "Nenhum resultado encontrado pelo agente pesquisador para a sua pergunta. Tente refinar a busca.",
+            "sugestao_visual": {"labels": ["Pesquisa Vazia"], "valores": [0], "tipo": "bar"},
+            "fontes": []
+        }
 
     # Extrai apenas os links para o auditor e para a resposta final
     fontes_links = [res.get('href') for res in bruto_resultados if res.get('href')]
@@ -273,17 +298,26 @@ async def pipeline_analise(pergunta: str):
             "fontes": fontes_links # Retorna os links extraídos
         }
     else:
+        # 5. Lidar com o retorno de erro de forma elegante
         # Se a auditoria falhar, tenta retornar uma mensagem de erro mais específica
         error_insight = analise.get('insight', '')
-        # Ajustado para considerar os novos insights de erro do analista
-        if "erro" in error_insight.lower() or "bloqueada" in error_insight.lower() or \
+        # Ajustado para considerar os novos insights de erro do analista, incluindo "Erro técnico"
+        if "erro técnico" in error_insight.lower() or "bloqueada" in error_insight.lower() or \
            "indisponível" in error_insight.lower() or "api key" in error_insight.lower() or \
            "dados vazios" in error_insight.lower() or "sem conteúdo" in error_insight.lower() or \
            "formato json" in error_insight.lower():
-            # Se o insight já contém uma mensagem de erro do analista
+            # Se o insight já contém uma mensagem de erro do analista, retorne-o diretamente.
             print(f"DEBUG: Pipeline de análise: Auditoria falhou, insight do analista já indica erro: '{error_insight}'")
-            return {"error": error_insight, "fontes": fontes_links}
+            return {
+                "insight": error_insight,
+                "sugestao_visual": analise.get('sugestao_visual', {"labels": ["Auditoria Falha"], "valores": [0], "tipo": "bar"}), # Garante um fallback visual
+                "fontes": fontes_links
+            }
         else:
-            # Erro genérico da auditoria (ex: insight vazio ou sem fontes)
+            # Erro genérico da auditoria (ex: insight vazio ou sem fontes, mas não erro de IA)
             print(f"DEBUG: Pipeline de análise: Auditoria falhou por motivo genérico. Insight: '{error_insight}', Fontes disponíveis: {bool(fontes_links)}")
-            return {"error": "Falha na auditoria da análise. O insight gerado ou as fontes disponíveis não puderam ser validados. Tente novamente ou reformule a pergunta.", "fontes": fontes_links}
+            return {
+                "insight": "Falha na auditoria da análise. O insight gerado ou as fontes disponíveis não puderam ser validados. Tente novamente ou reformule a pergunta.",
+                "sugestao_visual": {"labels": ["Auditoria Falha"], "valores": [0], "tipo": "bar"},
+                "fontes": fontes_links
+            }
