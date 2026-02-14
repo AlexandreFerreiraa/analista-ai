@@ -14,7 +14,7 @@ app = FastAPI()
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # Configura o modelo Gemini e os parâmetros de geração globalmente
-MODEL_NAME = "gemini-1.5-flash-latest"
+MODEL_NAME = "gemini-2.5-flash" # UPGRADE: Modelo alterado para Gemini 2.5 Flash
 generation_config = {
     "response_mime_type": "application/json", # Garante que a IA retorne apenas JSON
     "temperature": 0.7, # Controla a criatividade: 0.0 é mais determinístico, 1.0 mais criativo
@@ -58,12 +58,17 @@ def agente_pesquisador(query: str) -> list[dict]:
     try:
         # Passo 1: Use Gemini Flash para transformar a pergunta do usuário em 3 palavras-chave simples
         keyword_refinement_prompt = f"""
-        Você é um assistente especialista em busca. Dada uma pergunta, seu objetivo é extrair **exatamente 3 palavras-chave simples e relevantes em português**, separadas por espaços, que seriam ideais para uma busca na internet. Não inclua pontuação, artigos (a, o, os, as), preposições (de, em, para), nem frases adicionais. APENAS as 3 palavras-chave mais importantes. Se a pergunta tiver menos de 3 palavras-chave relevantes, repita uma palavra-chave para completar 3.
+        Você é um assistente de busca avançado, altamente preciso e eficaz. Dada uma pergunta, seu objetivo é extrair **exatamente 3 palavras-chave simples, únicas e altamente relevantes em português**, separadas por espaços. Estas palavras-chave devem ser as mais impactantes para uma busca na internet, visando resultados diretos e oficiais.
+        Siga estas regras estritas:
+        - Não inclua pontuação, artigos (a, o, os, as), preposições (de, em, para), ou qualquer frase adicional.
+        - APENAS as 3 palavras-chave mais importantes.
+        - Priorize palavras-chave únicas. Se a pergunta tiver menos de 3 palavras-chave realmente distintas e importantes, você pode repetir a mais importante para completar 3, mas evite se houver termos distintos.
+        - As palavras-chave devem ser objetivas e focadas na informação central.
 
         Exemplo 1: 'Qual a cotação do dólar hoje?' -> 'dólar hoje cotação'
         Exemplo 2: 'Notícias sobre inteligência artificial no Brasil' -> 'inteligência artificial Brasil notícias'
         Exemplo 3: 'Como funciona a energia solar para residências?' -> 'energia solar residências funcionamento'
-        Exemplo 4: 'O que é IA?' -> 'inteligência artificial IA oque'
+        Exemplo 4: 'O que é IA?' -> 'inteligência artificial IA definição' # Ajustado para maior precisão
 
         Pergunta: '{query}'
         Palavras-chave:"""
@@ -82,9 +87,9 @@ def agente_pesquisador(query: str) -> list[dict]:
             # Gera as palavras-chave usando o Gemini Flash
             print(f"DEBUG REFINAMENTO: Gerando palavras-chave para a pergunta: '{query}'")
             keyword_response = client.models.generate_content(
-                model=MODEL_NAME, # Usando o mesmo modelo Gemini 1.5 Flash
+                model=MODEL_NAME, # Usando o mesmo modelo Gemini 2.5 Flash
                 contents=keyword_refinement_prompt,
-                config=keyword_generation_config, # ALTERADO: de 'generation_config' para 'config'
+                config=keyword_generation_config,
             )
             
             generated_keywords = keyword_response.text.strip()
@@ -128,7 +133,7 @@ def agente_pesquisador(query: str) -> list[dict]:
 
 def agente_analista(dados: list[dict]):
     """
-    Foca em transformar texto em números e código Python usando o Gemini 1.5 Flash.
+    Foca em transformar texto em números e código Python usando o Gemini 2.5 Flash.
     Recebe os resultados da busca e gera um insight e dados para visualização em formato JSON.
     """
     # 5. Verifique se o parâmetro `dados` que a função recebe não está vazio.
@@ -173,29 +178,29 @@ def agente_analista(dados: list[dict]):
 
     # Cria o prompt detalhado para a IA
     prompt = f"""
-    Você é um agente analista de dados altamente qualificado e seu objetivo é extrair inteligência quantitativa e insights acionáveis de um conjunto de dados.
-    Recebi os seguintes dados de pesquisa brutos:
+    Você é um agente analista de dados **extremamente qualificado, com foco em precisão, rigor quantitativo e geração de insights profundos**. Seu objetivo é examinar meticulosamente os dados brutos de pesquisa fornecidos e extrair inteligência acionável e informações numéricas exatas ou rigorosamente inferidas.
+    Recebi os seguintes dados de pesquisa brutos para análise aprofundada:
 
     {combined_context}
 
-    Com base nesses dados, por favor, gere uma análise em formato JSON, seguindo estritamente a estrutura abaixo.
+    Com base NESTES DADOS, por favor, gere uma análise detalhada em formato JSON, seguindo estritamente a estrutura e as diretrizes abaixo.
     Sua análise deve incluir:
 
-    1.  **insight**: Um resumo executivo conciso e relevante dos dados encontrados.
-    2.  **sugestao_visual**: Dados numéricos para um gráfico, com as seguintes propriedades:
-        *   **labels**: Uma lista de strings para os eixos do gráfico (mínimo 3 elementos, se possível, representando categorias ou pontos de interesse).
-        *   **valores**: Uma lista de números reais (inteiros ou decimais) que correspondam aos `labels`. Tente extrair valores numéricos concretos dos dados fornecidos que possam ser comparados ou que mostrem uma tendência. Se os dados não contiverem números diretamente comparáveis, tente inferir ou agrupar informações quantitativas de forma plausível. É crucial que esta lista contenha **pelo menos 3 pontos de dados numéricos**. Se não for possível extrair ou inferir dados reais, crie 3 valores fictícios plausíveis que correspondam às labels criadas, mas sempre priorize dados reais.
-        *   **tipo**: A decisão sobre o tipo de gráfico mais adequado, que pode ser 'bar' para comparações entre categorias ou 'line' para mostrar tendências ao longo do tempo ou sequência. Escolha com base na natureza dos dados extraídos/inferidos.
+    1.  **insight**: Um resumo executivo **altamente preciso e objetivo** que destaque as principais descobertas, tendências, implicações ou relações causais presentes nos dados. O insight deve ser direto, sem redundâncias e focado no valor de negócio ou utilidade pública. Ele deve ser uma conclusão robusta baseada **exclusivamente** nos dados fornecidos.
+    2.  **sugestao_visual**: Dados numéricos e categóricos para a criação de um gráfico, com as seguintes propriedades, focando na **extração rigorosa de dados numéricos**:
+        *   **labels**: Uma lista de strings para os eixos do gráfico. Estas devem ser categorias claras, períodos de tempo ou itens distintos **explicitamente mencionados nos dados**. Tente identificar **pelo menos 5 elementos** para uma visualização mais rica; no mínimo 3.
+        *   **valores**: Uma lista de números reais (inteiros ou decimais) que correspondam EXATAMENTE aos `labels`. É CRUCIAL que estes `valores` sejam extraídos diretamente dos dados fornecidos, representando quantidades, porcentagens, valores monetários ou contagens. Se os dados não contiverem números explícitos para uma comparação direta, faça uma inferência rigorosa de magnitudes ou agrupamentos, explicando brevemente no insight a base da inferência, mas **sempre priorize números concretos**. Se for absolutamente impossível extrair ou inferir 3 valores numericamente comparáveis e com sentido, indique isso no insight.
+        *   **tipo**: A decisão sobre o tipo de gráfico mais adequado. Pode ser 'bar' para comparações claras entre categorias ou 'line' para mostrar tendências, evolução temporal ou sequências. A escolha deve ser **justificada pela natureza dos `labels` e `valores` extraídos**.
 
-    Retorne APENAS o objeto JSON. Não inclua texto explicativo adicional antes ou depois do JSON.
+    Retorne APENAS o objeto JSON. Não inclua absolutamente NENHUM texto explicativo, introdução, conclusão ou qualquer outro caractere fora do objeto JSON. A resposta deve começar e terminar com chaves `{}`.
 
     Exemplo do formato de saída esperado:
     ```json
     {{
-      "insight": "O mercado de [SETOR] apresentou um crescimento moderado no último trimestre, com investimentos concentrados em [ÁREA_CHAVE] e um desafio persistente em [DESAFIO].",
+      "insight": "A performance trimestral da empresa Y revela um crescimento consistente nas vendas dos produtos A e C, impulsionado por campanhas de marketing eficazes no Q2, enquanto o produto B mostrou estagnação devido a desafios na cadeia de suprimentos.",
       "sugestao_visual": {{
-        "labels": ["Produto A", "Produto B", "Produto C", "Produto D"],
-        "valores": [1200, 850, 1500, 900],
+        "labels": ["Produto A", "Produto B", "Produto C", "Produto D", "Produto E"],
+        "valores": [1200.50, 850.75, 1500.20, 900.00, 1100.10],
         "tipo": "bar"
       }}
     }}
@@ -203,10 +208,10 @@ def agente_analista(dados: list[dict]):
     OU
     ```json
     {{
-      "insight": "A tendência de adoção da tecnologia X demonstra um crescimento exponencial, com um pico de interesse em [PERÍODO] e uma projeção contínua de alta.",
+      "insight": "A pesquisa de mercado anual aponta para uma elevação gradual na adoção da tecnologia Z, passando de 10% em 2020 para 30% em 2023, com projeções de 45% em 2024, indicando uma aceitação crescente no segmento B2C.",
       "sugestao_visual": {{
-        "labels": ["Jan", "Fev", "Mar", "Abr", "Mai"],
-        "valores": [10, 25, 60, 150, 300],
+        "labels": ["2020", "2021", "2022", "2023", "2024 (proj.)"],
+        "valores": [10, 15, 25, 30, 45],
         "tipo": "line"
       }}
     }}
@@ -220,7 +225,7 @@ def agente_analista(dados: list[dict]):
         response = client.models.generate_content(
             model=MODEL_NAME, # O modelo é especificado aqui
             contents=prompt,
-            config=generation_config, # ALTERADO: de 'generation_config' para 'config'
+            config=generation_config,
             # safety_settings são omitidas para usar as configurações padrão do Gemini.
         )
         
