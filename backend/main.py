@@ -1,5 +1,5 @@
 import os
-import json # Adicionado para manipulação de JSON
+import json
 
 from google import genai
 from fastapi import FastAPI
@@ -24,13 +24,9 @@ generation_config = {
 # As configurações de segurança são omitidas para usar as configurações padrão do Gemini,
 # que são recomendadas para a maioria dos casos de uso.
 
-# Inicializa o modelo Gemini uma vez para reutilização
-gemini_model = None
-try:
-    gemini_model = client.get_model(MODEL_NAME)
-except Exception as e:
-    print(f"Erro ao carregar o modelo Gemini '{MODEL_NAME}': {e}")
-    # O 'gemini_model' permanecerá None, e 'agente_analista' tratará esse caso.
+# A inicialização do modelo (gemini_model = client.get_model(MODEL_NAME)) foi removida.
+# O modelo será referenciado diretamente na chamada generate_content,
+# evitando AttributeError e garantindo que o backend não trave na inicialização.
 
 
 # --- DEFINIÇÃO DOS PAPÉIS (ROLES) ---
@@ -43,13 +39,15 @@ def agente_pesquisador(query: str) -> list[dict]:
     search_results = []
     try:
         # Realiza a busca utilizando DDGS().text(). Limitamos a 5 resultados para relevância.
-        # 'wt-br' especifica a região de busca para o Brasil, se desejado.
-        for r in DDGS().text(keywords=query, region='wt-br', max_results=5):
-            search_results.append({
-                "title": r.get('title'),
-                "body": r.get('body'),
-                "href": r.get('href')
-            })
+        # O padrão 'with DDGS() as ddgs:' garante que a sessão seja gerenciada corretamente.
+        with DDGS() as ddgs:
+            # 'wt-br' especifica a região de busca para o Brasil, se desejado.
+            for r in ddgs.text(keywords=query, region='wt-br', max_results=5):
+                search_results.append({
+                    "title": r.get('title'),
+                    "body": r.get('body'),
+                    "href": r.get('href')
+                })
     except Exception as e:
         print(f"Erro ao buscar com DuckDuckGo para a query '{query}': {e}")
         # Retorna uma lista vazia em caso de falha na busca
@@ -62,16 +60,10 @@ def agente_analista(dados: list[dict]):
     Foca em transformar texto em números e código Python usando o Gemini 1.5 Flash.
     Recebe os resultados da busca e gera um insight e dados para visualização em formato JSON.
     """
-    # Verifica se o modelo Gemini foi carregado com sucesso
-    if not gemini_model:
-        return {
-            "insight": "Serviço de análise indisponível: Modelo Gemini não carregado. Verifique a API Key e a disponibilidade do modelo.",
-            "sugestao_visual": {
-                "labels": ["Erro"],
-                "valores": [0],
-                "tipo": "bar"
-            }
-        }
+    # Não há mais uma verificação global de 'gemini_model'.
+    # O cliente 'genai.Client' é inicializado, e quaisquer erros de API Key
+    # ou indisponibilidade do modelo serão capturados no bloco try/except abaixo,
+    # durante a chamada a 'client.models.generate_content'.
         
     # Combina os corpos e títulos dos resultados da pesquisa em uma única string para o LLM
     context_parts = []
@@ -138,9 +130,11 @@ def agente_analista(dados: list[dict]):
     """
     
     try:
-        # Gera o conteúdo usando o modelo Gemini com as configurações definidas
-        response = gemini_model.generate_content(
-            prompt,
+        # Gera o conteúdo usando o modelo Gemini com as configurações definidas.
+        # Usando client.models.generate_content diretamente conforme o novo padrão.
+        response = client.models.generate_content(
+            model=MODEL_NAME, # O modelo é especificado aqui
+            contents=prompt,
             generation_config=generation_config,
             # safety_settings são omitidas para usar as configurações padrão do Gemini.
         )
@@ -201,9 +195,11 @@ def agente_analista(dados: list[dict]):
             }
         }
     except Exception as e:
+        # Este bloco captura erros gerais, incluindo problemas com a API Key do Gemini
+        # ou indisponibilidade do serviço.
         print(f"Erro inesperado no agente analista: {e}")
         return {
-            "insight": f"Erro interno ao gerar análise: {e}. Por favor, tente novamente com uma pergunta diferente.",
+            "insight": f"Erro interno ao gerar análise: {e}. Por favor, verifique sua API Key e tente novamente.",
             "sugestao_visual": {
                 "labels": ["Erro Inesperado"],
                 "valores": [0],
@@ -255,7 +251,7 @@ async def pipeline_analise(pergunta: str):
     else:
         # Se a auditoria falhar, tenta retornar uma mensagem de erro mais específica
         error_insight = analise.get('insight', '')
-        if "erro" in error_insight.lower() or "bloqueada" in error_insight.lower() or "indisponível" in error_insight.lower():
+        if "erro" in error_insight.lower() or "bloqueada" in error_insight.lower() or "indisponível" in error_insight.lower() or "api key" in error_insight.lower():
             # Se o insight já contém uma mensagem de erro do analista
             return {"error": error_insight, "fontes": fontes_links}
         else:
