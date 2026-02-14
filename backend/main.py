@@ -52,7 +52,9 @@ def agente_pesquisador(query: str) -> list[dict]:
     Retorna uma lista de dicionários, onde cada dicionário contém 'title', 'body' (texto) e 'href' (link).
     """
     search_results = []
-    query_refinada = "" # Inicializa para garantir que a variável exista em caso de erro
+    # Inicializa query_refinada com a query original como fallback.
+    # Se a IA falhar em gerar palavras-chave, ou gerar vazio, a busca usará a query original.
+    query_refinada = query 
     try:
         # Passo 1: Use Gemini Flash para transformar a pergunta do usuário em 3 palavras-chave simples
         keyword_refinement_prompt = f"""
@@ -75,20 +77,34 @@ def agente_pesquisador(query: str) -> list[dict]:
             "max_output_tokens": 50 # Limita a saída a poucas palavras
         }
 
-        # Gera as palavras-chave usando o Gemini Flash
-        print(f"DEBUG REFINAMENTO: Gerando palavras-chave para a pergunta: '{query}'")
-        keyword_response = client.models.generate_content(
-            model=MODEL_NAME, # Usando o mesmo modelo Gemini 1.5 Flash
-            contents=keyword_refinement_prompt,
-            generation_config=keyword_generation_config,
-        )
-        
-        # A resposta.text conterá diretamente as palavras-chave refinadas
-        query_refinada = keyword_response.text.strip()
-        print(f"DEBUG REFINAMENTO: Palavras-chave geradas pelo Gemini: '{query_refinada}'")
+        # Adiciona um bloco try/except ao redor da geração de palavras-chave
+        try:
+            # Gera as palavras-chave usando o Gemini Flash
+            print(f"DEBUG REFINAMENTO: Gerando palavras-chave para a pergunta: '{query}'")
+            keyword_response = client.models.generate_content(
+                model=MODEL_NAME, # Usando o mesmo modelo Gemini 1.5 Flash
+                contents=keyword_refinement_prompt,
+                config=keyword_generation_config, # ALTERADO: de 'generation_config' para 'config'
+            )
+            
+            generated_keywords = keyword_response.text.strip()
+            # Se a IA gerou palavras-chave válidas, usamos elas; caso contrário, mantemos a query original.
+            if generated_keywords: 
+                query_refinada = generated_keywords
+                print(f"DEBUG REFINAMENTO: Palavras-chave geradas pelo Gemini: '{query_refinada}'")
+            else:
+                # Se a IA retornou vazio, usa a query original como fallback
+                print(f"DEBUG REFINAMENTO: Gemini gerou palavras-chave vazias. Usando a query original como fallback: '{query}'")
+                query_refinada = query
+        except Exception as e:
+            # Em caso de erro na chamada da IA (API Key, bloqueio, etc.), usa a query original como fallback
+            print(f"DEBUG REFINAMENTO: Erro ao gerar palavras-chave com Gemini: {e}. Usando a query original como fallback: '{query}'")
+            query_refinada = query
 
-        if not query_refinada:
-            print("DEBUG PESQUISA: Palavras-chave refinadas estão vazias. Nenhuma busca será realizada.")
+        # Se a query_refinada, mesmo após o fallback, estiver vazia ou for apenas espaços, 
+        # significa que a query original era inválida ou muito curta, e não vale a pena pesquisar.
+        if not query_refinada.strip():
+            print("DEBUG PESQUISA: Palavras-chave refinadas (final) estão vazias. Nenhuma busca será realizada.")
             return []
 
         # Passo 2: Atualiza a busca do DuckDuckGo para usar as palavras-chave refinadas
@@ -103,6 +119,7 @@ def agente_pesquisador(query: str) -> list[dict]:
                 "href": r.get('href')
             })
     except Exception as e:
+        # Este bloco captura erros gerais relacionados à busca DDGS, APÓS a tentativa de refino das palavras-chave.
         print(f"Erro ao buscar com DuckDuckGo para a query refinada '{query_refinada}' (original: '{query}'): {e}")
         # Retorna uma lista vazia em caso de falha na busca
         return []
@@ -203,7 +220,7 @@ def agente_analista(dados: list[dict]):
         response = client.models.generate_content(
             model=MODEL_NAME, # O modelo é especificado aqui
             contents=prompt,
-            generation_config=generation_config,
+            config=generation_config, # ALTERADO: de 'generation_config' para 'config'
             # safety_settings são omitidas para usar as configurações padrão do Gemini.
         )
         
@@ -240,7 +257,7 @@ def agente_analista(dados: list[dict]):
             # Se a validação interna do Gemini falhar, retorna um dicionário padrão.
             # O insight pode ser mantido se for útil, mas a visualização é padronizada.
             return {
-                "insight": analise.get('insight', 'Análise limitada. Dados insuficientes para um gráfico significativo.'),
+                "insight": analise_data.get('insight', 'Análise limitada. Dados insuficientes para um gráfico significativo.'),
                 "sugestao_visual": {
                     "labels": ["Dado 1", "Dado 2", "Dado 3"],
                     "valores": [10, 20, 15], # Valores de fallback para garantir 3 pontos
