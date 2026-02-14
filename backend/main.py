@@ -196,12 +196,17 @@ def agente_analista(dados: list[dict]):
         }
 
     # Cria o prompt detalhado para a IA
-    prompt = f"""
+    # A parte variável (combined_context) será inserida em uma f-string separada
+    # para evitar problemas de interpretação com chaves duplas {{}} em f-strings longas.
+    prompt_base_start = """
     Você é um agente analista de dados **extremamente qualificado, com foco em precisão, rigor quantitativo e geração de insights profundos**. Seu objetivo é examinar meticulosamente os dados brutos de pesquisa fornecidos e extrair inteligência acionável e informações numéricas exatas ou rigorosamente inferidas.
     Recebi os seguintes dados de pesquisa brutos para análise aprofundada:
 
-    {combined_context}
+    """
+    
+    prompt_context = f"""{combined_context}"""
 
+    prompt_base_end = """
     Com base NESTES DADOS, por favor, gere uma análise detalhada em formato JSON, seguindo estritamente a estrutura e as diretrizes abaixo.
     Sua análise deve incluir:
 
@@ -215,27 +220,29 @@ def agente_analista(dados: list[dict]):
 
     Exemplo do formato de saída esperado:
     ```json
-    {{
+    {
       "insight": "A performance trimestral da empresa Y revela um crescimento consistente nas vendas dos produtos A e C, impulsionado por campanhas de marketing eficazes no Q2, enquanto o produto B mostrou estagnação devido a desafios na cadeia de suprimentos.",
-      "sugestao_visual": {{
+      "sugestao_visual": {
         "labels": ["Produto A", "Produto B", "Produto C", "Produto D", "Produto E"],
         "valores": [1200.50, 850.75, 1500.20, 900.00, 1100.10],
         "tipo": "bar"
-      }}
-    }}
+      }
+    }
     ```
     OU
     ```json
-    {{
+    {
       "insight": "A pesquisa de mercado anual aponta para uma elevação gradual na adoção da tecnologia Z, passando de 10% em 2020 para 30% em 2023, com projeções de 45% em 2024, indicando uma aceitação crescente no segmento B2C.",
-      "sugestao_visual": {{
+      "sugestao_visual": {
         "labels": ["2020", "2021", "2022", "2023", "2024 (proj.)"],
         "valores": [10, 15, 25, 30, 45],
         "tipo": "line"
-      }}
-    }}
+      }
+    }
     ```
     """
+
+    prompt = prompt_base_start + prompt_context + prompt_base_end
     
     # 2. Envolver todo o processo em um bloco try...except
     try:
