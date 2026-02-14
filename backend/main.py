@@ -298,17 +298,8 @@ def agente_analista(dados: list[dict]):
             
         return analise_data
 
-    except genai.types.BlockedPromptException as e:
-        print(f"Erro no agente analista: Prompt bloqueado pela segurança do Gemini. Detalhes: {e}")
-        # 3. Retorne um dicionário padrão em caso de erro
-        return {
-            "insight": f"Erro técnico ao processar dados: Prompt bloqueado pela segurança do Gemini. Detalhes: {str(e)}",
-            "sugestao_visual": {
-                "labels": ["Erro"],
-                "valores": [0],
-                "tipo": "bar"
-            }
-        }
+    # Removemos a referência direta a genai.types.BlockedPromptException.
+    # A exceção agora será capturada pelo bloco Exception mais genérico abaixo.
     except json.JSONDecodeError as e:
         print(f"Erro no agente analista: Falha ao decodificar JSON da resposta da IA. Detalhes: {e}. Resposta bruta da IA: '{raw_response_text[:500]}...'")
         # 3. Retorne um dicionário padrão em caso de erro
@@ -321,8 +312,8 @@ def agente_analista(dados: list[dict]):
             }
         }
     except Exception as e:
-        # Este bloco captura erros gerais, incluindo problemas com a API Key do Gemini
-        # ou indisponibilidade do serviço.
+        # Este bloco captura erros gerais, incluindo problemas com a API Key do Gemini,
+        # indisponibilidade do serviço ou prompts bloqueados (que eram genai.types.BlockedPromptException).
         print(f"Erro inesperado no agente analista: {e}")
         # 3. Retorne um dicionário padrão em caso de erro
         return {
