@@ -1,5 +1,6 @@
 import os
 import json
+import re # Adicionado para limpeza da query
 
 from google import genai
 from fastapi import FastAPI
@@ -46,21 +47,33 @@ def limpar_json(texto: str) -> str:
 
 def agente_pesquisador(query: str) -> list[dict]:
     """
-    Foca em buscar dados brutos e links oficiais usando a biblioteca duckduckgo-search.
+    Foca em buscar dados brutos e links oficiais usando a biblioteca duckduckgo-search (DDGS).
     Retorna uma lista de dicionários, onde cada dicionário contém 'title', 'body' (texto) e 'href' (link).
     """
     search_results = []
     try:
-        # Realiza a busca utilizando DDGS().text(). Limitamos a 5 resultados para relevância.
-        # O padrão 'with DDGS() as ddgs:' garante que a sessão seja gerenciada corretamente.
-        with DDGS() as ddgs:
-            # 'wt-br' especifica a região de busca para o Brasil, se desejado.
-            for r in ddgs.text(keywords=query, region='wt-br', max_results=5):
-                search_results.append({
-                    "title": r.get('title'),
-                    "body": r.get('body'),
-                    "href": r.get('href')
-                })
+        # 3. Limpeza da query: Remove caracteres especiais que podem travar a URL
+        # Mantém apenas caracteres alfanuméricos, espaços e hífens
+        cleaned_query = re.sub(r'[^\w\s-]', '', query).strip()
+        
+        if not cleaned_query:
+            print("DEBUG PESQUISA: Query limpa está vazia. Nenhuma busca será realizada.")
+            return []
+
+        # 4. Adiciona print de debug para ver o que está sendo enviado na busca
+        print(f"DEBUG PESQUISA: Realizando busca para: {cleaned_query}")
+
+        # 3. Usa busca simplificada: DDGS().text()
+        # Remove o parâmetro 'region'
+        # DDGS().text() é uma chamada funcional que não requer o 'with DDGS() as ddgs:' para uma única operação.
+        results = DDGS().text(keywords=cleaned_query, max_results=5)
+        
+        for r in results: # 'results' já é um iterável com os dicionários de resultados
+            search_results.append({
+                "title": r.get('title'),
+                "body": r.get('body'),
+                "href": r.get('href')
+            })
     except Exception as e:
         print(f"Erro ao buscar com DuckDuckGo para a query '{query}': {e}")
         # Retorna uma lista vazia em caso de falha na busca
