@@ -1,6 +1,6 @@
 import os
 import json
-import re # Adicionado para limpeza da query
+# import re # Removido, pois a limpeza da query agora é feita pelo Gemini para refinar as palavras-chave
 
 from google import genai
 from fastapi import FastAPI
@@ -47,35 +47,63 @@ def limpar_json(texto: str) -> str:
 
 def agente_pesquisador(query: str) -> list[dict]:
     """
-    Foca em buscar dados brutos e links oficiais usando a biblioteca duckduckgo-search (DDGS).
+    Foca em buscar dados brutos e links oficiais usando a biblioteca ddgs.
+    Primeiro, refina a pergunta do usuário para 3 palavras-chave simples usando Gemini Flash.
     Retorna uma lista de dicionários, onde cada dicionário contém 'title', 'body' (texto) e 'href' (link).
     """
     search_results = []
+    query_refinada = "" # Inicializa para garantir que a variável exista em caso de erro
     try:
-        # 3. Limpeza da query: Remove caracteres especiais que podem travar a URL
-        # Mantém apenas caracteres alfanuméricos, espaços e hífens
-        cleaned_query = re.sub(r'[^\w\s-]', '', query).strip()
+        # Passo 1: Use Gemini Flash para transformar a pergunta do usuário em 3 palavras-chave simples
+        keyword_refinement_prompt = f"""
+        Você é um assistente especialista em busca. Dada uma pergunta, seu objetivo é extrair **exatamente 3 palavras-chave simples e relevantes em português**, separadas por espaços, que seriam ideais para uma busca na internet. Não inclua pontuação, artigos (a, o, os, as), preposições (de, em, para), nem frases adicionais. APENAS as 3 palavras-chave mais importantes. Se a pergunta tiver menos de 3 palavras-chave relevantes, repita uma palavra-chave para completar 3.
+
+        Exemplo 1: 'Qual a cotação do dólar hoje?' -> 'dólar hoje cotação'
+        Exemplo 2: 'Notícias sobre inteligência artificial no Brasil' -> 'inteligência artificial Brasil notícias'
+        Exemplo 3: 'Como funciona a energia solar para residências?' -> 'energia solar residências funcionamento'
+        Exemplo 4: 'O que é IA?' -> 'inteligência artificial IA oque'
+
+        Pergunta: '{query}'
+        Palavras-chave:"""
         
-        if not cleaned_query:
-            print("DEBUG PESQUISA: Query limpa está vazia. Nenhuma busca será realizada.")
+        # Configuração de geração específica para extração de palavras-chave: texto simples, determinístico.
+        keyword_generation_config = {
+            "response_mime_type": "text/plain", # Queremos texto simples, não JSON
+            "temperature": 0.1, # Baixa temperatura para saída determinística
+            "top_p": 0.95,
+            "top_k": 60,
+            "max_output_tokens": 50 # Limita a saída a poucas palavras
+        }
+
+        # Gera as palavras-chave usando o Gemini Flash
+        print(f"DEBUG REFINAMENTO: Gerando palavras-chave para a pergunta: '{query}'")
+        keyword_response = client.models.generate_content(
+            model=MODEL_NAME, # Usando o mesmo modelo Gemini 1.5 Flash
+            contents=keyword_refinement_prompt,
+            generation_config=keyword_generation_config,
+        )
+        
+        # A resposta.text conterá diretamente as palavras-chave refinadas
+        query_refinada = keyword_response.text.strip()
+        print(f"DEBUG REFINAMENTO: Palavras-chave geradas pelo Gemini: '{query_refinada}'")
+
+        if not query_refinada:
+            print("DEBUG PESQUISA: Palavras-chave refinadas estão vazias. Nenhuma busca será realizada.")
             return []
 
-        # 4. Adiciona print de debug para ver o que está sendo enviado na busca
-        print(f"DEBUG PESQUISA: Realizando busca para: {cleaned_query}")
-
-        # 3. Usa busca simplificada: DDGS().text()
-        # Remove o parâmetro 'region'
-        # DDGS().text() é uma chamada funcional que não requer o 'with DDGS() as ddgs:' para uma única operação.
-        results = DDGS().text(keywords=cleaned_query, max_results=5)
+        # Passo 2: Atualiza a busca do DuckDuckGo para usar as palavras-chave refinadas
+        print(f"DEBUG PESQUISA: Realizando busca com DDGS para: '{query_refinada}'")
+        with DDGS() as ddgs:
+            results = [r for r in ddgs.text(keywords=query_refinada, max_results=5)]
         
-        for r in results: # 'results' já é um iterável com os dicionários de resultados
+        for r in results:
             search_results.append({
                 "title": r.get('title'),
                 "body": r.get('body'),
                 "href": r.get('href')
             })
     except Exception as e:
-        print(f"Erro ao buscar com DuckDuckGo para a query '{query}': {e}")
+        print(f"Erro ao buscar com DuckDuckGo para a query refinada '{query_refinada}' (original: '{query}'): {e}")
         # Retorna uma lista vazia em caso de falha na busca
         return []
     
@@ -212,7 +240,7 @@ def agente_analista(dados: list[dict]):
             # Se a validação interna do Gemini falhar, retorna um dicionário padrão.
             # O insight pode ser mantido se for útil, mas a visualização é padronizada.
             return {
-                "insight": analise_data.get('insight', 'Análise limitada. Dados insuficientes para um gráfico significativo.'),
+                "insight": analise.get('insight', 'Análise limitada. Dados insuficientes para um gráfico significativo.'),
                 "sugestao_visual": {
                     "labels": ["Dado 1", "Dado 2", "Dado 3"],
                     "valores": [10, 20, 15], # Valores de fallback para garantir 3 pontos
