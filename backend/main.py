@@ -1,34 +1,53 @@
 import os
 import json
-# import re # Removido, pois a limpeza da query agora é feita pelo Gemini para refinar as palavras-chave
+import logging # Adicionado para registrar erros de inicialização
 
-from google import genai
-from fastapi import FastAPI
-from duckduckgo_search import DDGS # Esta classe vem do pacote 'ddgs'
+# Configura o logger para mostrar mensagens informativas e críticas no console
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Carrega variáveis de ambiente do arquivo .env
-from dotenv import load_dotenv
-load_dotenv()
+# --- BLOCos TRY/EXCEPT GLOBAIS PARA CAPTURAR ERROS DE INICIALIZAÇÃO CRÍTICOS ---
+try:
+    # Carrega variáveis de ambiente do arquivo .env
+    from dotenv import load_dotenv
+    load_dotenv()
+    logging.info(".env file loaded successfully.")
 
-app = FastAPI()
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    from google import genai
+    from fastapi import FastAPI
+    from duckduckgo_search import DDGS # Esta classe vem do pacote 'ddgs'
 
-# Configura o modelo Gemini e os parâmetros de geração globalmente
-MODEL_NAME = "gemini-2.5-flash" # UPGRADE: Modelo alterado para Gemini 2.5 Flash
-generation_config = {
-    "response_mime_type": "application/json", # Garante que a IA retorne apenas JSON
-    "temperature": 0.7, # Controla a criatividade: 0.0 é mais determinístico, 1.0 mais criativo
-    "top_p": 0.95,      # Amostragem para diversidade
-    "top_k": 60,        # Amostragem para diversidade
-    "max_output_tokens": 1024 # Limita o tamanho da resposta da IA para evitar custos excessivos
-}
-# As configurações de segurança são omitidas para usar as configurações padrão do Gemini,
-# que são recomendadas para a maioria da maioria dos casos de uso.
+    app = FastAPI()
 
-# A inicialização do modelo (gemini_model = client.get_model(MODEL_NAME)) foi removida.
-# O modelo será referenciado diretamente na chamada generate_content,
-# evitando AttributeError e garantindo que o backend não trave na inicialização.
+    # Garante que a API Key do Gemini está definida antes de tentar inicializar o cliente
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_api_key:
+        raise ValueError("GEMINI_API_KEY environment variable is not set. Please ensure your .env file contains 'GEMINI_API_KEY=YOUR_API_KEY'.")
 
+    client = genai.Client(api_key=gemini_api_key)
+    logging.info("Gemini client initialized successfully.")
+
+    # Configura o modelo Gemini e os parâmetros de geração globalmente
+    MODEL_NAME = "gemini-2.5-flash" # UPGRADE: Modelo alterado para Gemini 2.5 Flash
+    generation_config = {
+        "response_mime_type": "application/json", # Garante que a IA retorne apenas JSON
+        "temperature": 0.7, # Controla a criatividade: 0.0 é mais determinístico, 1.0 mais criativo
+        "top_p": 0.95,      # Amostragem para diversidade
+        "top_k": 60,        # Amostragem para diversidade
+        "max_output_tokens": 1024 # Limita o tamanho da resposta da IA para evitar custos excessivos
+    }
+    logging.info(f"Gemini model configured: {MODEL_NAME}")
+    # As configurações de segurança são omitidas para usar as configurações padrão do Gemini,
+    # que são recomendadas para a maioria da maioria dos casos de uso.
+
+    # A inicialização do modelo (gemini_model = client.get_model(MODEL_NAME)) foi removida.
+    # O modelo será referenciado diretamente na chamada generate_content,
+    # evitando AttributeError e garantindo que o backend não trave na inicialização.
+
+except Exception as e:
+    logging.critical(f"FATAL ERROR during FastAPI application startup: {e}", exc_info=True)
+    # Re-raise the exception to ensure the process actually terminates and Uvicorn reports the failure,
+    # making the log visible before the crash.
+    raise
 
 # --- DEFINIÇÃO DOS PAPÉIS (ROLES) ---
 
@@ -89,7 +108,7 @@ def agente_pesquisador(query: str) -> list[dict]:
             keyword_response = client.models.generate_content(
                 model=MODEL_NAME, # Usando o mesmo modelo Gemini 2.5 Flash
                 contents=keyword_refinement_prompt,
-                config=keyword_generation_config,
+                generation_config=keyword_generation_config, # CORREÇÃO: Usar 'generation_config'
             )
             
             generated_keywords = keyword_response.text.strip()
@@ -225,7 +244,7 @@ def agente_analista(dados: list[dict]):
         response = client.models.generate_content(
             model=MODEL_NAME, # O modelo é especificado aqui
             contents=prompt,
-            config=generation_config,
+            generation_config=generation_config, # CORREÇÃO: Usar 'generation_config'
             # safety_settings são omitidas para usar as configurações padrão do Gemini.
         )
         
